@@ -11,8 +11,10 @@ from data_utils import flow_viz
 image_width = 768
 image_height = 432
 
-imPath = '/home/leonwilliams/workshop/pangu/panguData/flight08'
-vis_path = os.path.join(imPath,os.path.basename(imPath)+'_results_neuflow_vert_rotated_v2')
+imPath = '/home/leonwilliams/workshop/pangu/panguData/horizontalTestFlight/test00'
+vis_path = os.path.join(imPath,os.path.basename(imPath)+'_results_neuflow_rescaled_1in10')
+
+rotate_then_process = True
 
 if not os.path.isdir(vis_path):
     os.mkdir(vis_path)
@@ -39,11 +41,12 @@ def draw_optical_flow(image, u_flow, v_flow, grid_size=(6, 6), scale=10):
 
     return output_image
 
-def get_cuda_image(image_path):
+def get_cuda_image(image_path,rotate=False):
     image = cv2.imread(image_path)
 
-    # rotate the image
-    image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    if rotate:
+        # rotate the image
+        image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
 
     image = cv2.resize(image, (image_width, image_height))
 
@@ -130,12 +133,14 @@ if not os.path.exists(vis_path):
 
 flow_tensor = []
 
+image_path_list = image_path_list[::10]
+
 for image_path_0, image_path_1 in zip(image_path_list[:-1], image_path_list[1:]):
 
     print(image_path_0)
 
-    image_0 = get_cuda_image(image_path_0)
-    image_1 = get_cuda_image(image_path_1)
+    image_0 = get_cuda_image(image_path_0, rotate=rotate_then_process)
+    image_1 = get_cuda_image(image_path_1, rotate=rotate_then_process)
 
     file_name = os.path.basename(image_path_0)
 
@@ -147,13 +152,22 @@ for image_path_0, image_path_1 in zip(image_path_list[:-1], image_path_list[1:])
 
         image_0 = cv2.imread(image_path_0)
 
-        # rotate flow matrix 90 degrees counterclockwise
-        flow = cv2.rotate(flow, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        if rotate_then_process:
+            # rotate flow matrix 90 degrees counterclockwise
+            flow = cv2.rotate(flow, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-        # rotate flow vectors 90 degrees
-        flow = rotate_vectors_90_degrees(flow)
+            # rotate flow vectors 90 degrees
+            flow = rotate_vectors_90_degrees(flow)
 
-        # resize flow to have x and y dimensions corresponding to image_0
+        # Rescaling the flow by the same scalar factor as the image is resized by
+        u_flow_scalar_factor = image_0.shape[0]/flow.shape[0]
+        v_flow_scalar_factor = image_0.shape[1]/flow.shape[1]
+
+        # elementwise scalar multiplication of u and v flow
+        flow[:,:,0] *= u_flow_scalar_factor
+        flow[:,:,1] *= v_flow_scalar_factor
+
+        # interpolate flow to have x and y dimensions corresponding to image_0
         flow = cv2.resize(flow.astype(np.float32), (image_0.shape[1], image_0.shape[0]))
 
         # Append flows to flow tensor
@@ -177,4 +191,4 @@ for image_path_0, image_path_1 in zip(image_path_list[:-1], image_path_list[1:])
 
 flow_tensor = np.array(flow_tensor)
 
-np.save(os.path.join(vis_path, os.path.basename(vis_path)+"_flow_tensor.npy"),flow_tensor)
+np.save(os.path.join(vis_path, os.path.basename(imPath)+"_flow_tensor.npy"),flow_tensor)
